@@ -148,7 +148,7 @@ import prisma from '@/lib/prisma';
 
 // Allow this serverless function to run for up to 60 seconds to prevent 504 Gateway Timeout on Vercel
 export const maxDuration = 60;
-import { generateText } from 'ai';
+import { generateText, generateObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
@@ -176,26 +176,27 @@ const MODEL_FALLBACK_CHAIN = [
   { provider: 'google', model: 'gemini-flash-latest' }
 ];
 
-async function generateWithFallback(args: { system: string; prompt: string }) {
+async function generateObjectWithFallback(args: { system: string; prompt: string; schema: any }) {
   let lastError: any;
   for (const modelDef of MODEL_FALLBACK_CHAIN) {
     try {
       const model = modelDef.provider === 'google' ? google(modelDef.model) : groq(modelDef.model);
-      const result = await generateText({ ...args, model });
-      return { ...result, modelUsed: modelDef.model };
+      const result = await generateObject({ ...args, model });
+      return { object: result.object, modelUsed: modelDef.model };
     } catch (err: any) {
       lastError = err;
       const msg = (err?.message || '').toLowerCase();
       const isModelAccessIssue =
         msg.includes('not found for api version') ||
         msg.includes('no longer available') ||
-        msg.includes('is not supported for generatecontent') ||
+        msg.includes('is not supported') ||
         msg.includes('fetch failed') ||
         msg.includes('quota') ||
         msg.includes('429') ||
-        msg.includes('unavailable');
+        msg.includes('unavailable') ||
+        msg.includes('json'); // Sometimes models fail json parse locally
       if (!isModelAccessIssue && modelDef.provider === 'google') throw err; 
-      console.warn(`Model ${modelDef.model} unavailable, trying next in fallback chain...`);
+      console.warn(`Model ${modelDef.model} unavailable or failed, trying next in fallback chain...`);
     }
   }
   throw lastError;
@@ -266,34 +267,25 @@ export async function GET(request: Request) {
         Recent live news discovered:
         ${topicsText}`;
 
-      // Try a chain of models - Google has been restricting model access
-      // unpredictably for newer API keys mid-project, so don't hardcode one.
-      const { text, modelUsed } = await generateWithFallback({
-        system: `You are an expert ${agent.domain} persona named ${agent.name}.
-        Analyze the provided live news topics and apply strict editorial judgment.
-        
-        You MUST respond with a raw JSON object and nothing else. Do not use markdown code blocks like \`\`\`json.
-        The JSON must match this structure exactly:
-        {
-          "isWorthy": boolean,
-          "text": "String representing your expert post (if worthy), or null",
-          "rationale": "String explaining why you accepted or rejected it",
-          "sources": ["Only include the EXACT link URL provided in the Recent live news section. Do NOT hallucinate or guess any other URLs."]
-        }`,
-        prompt,
-      });
-
       let object;
+      let modelUsed = "unknown";
+      
       try {
-        // More robust JSON extraction to handle any markdown or extra text
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error("No JSON object found in response");
-        }
-        object = JSON.parse(jsonMatch[0]);
-      } catch (parseError) {
-        console.error('Failed to parse Gemini JSON output:', text);
-        results.push({ agentId: agent.id, status: 'error', rationale: 'JSON parse failed' });
+        const result = await generateObjectWithFallback({
+          system: `You are an expert ${agent.domain} persona named ${agent.name}. Analyze the provided live news topics and apply strict editorial judgment.`,
+          prompt,
+          schema: z.object({
+            isWorthy: z.boolean(),
+            text: z.string().nullable().describe("String representing your expert post (if worthy), or null"),
+            rationale: z.string().describe("String explaining why you accepted or rejected it"),
+            sources: z.array(z.string()).describe("Only include the EXACT link URL provided in the Recent live news section. Do NOT hallucinate or guess any other URLs.")
+          })
+        });
+        object = result.object;
+        modelUsed = result.modelUsed;
+      } catch (err: any) {
+        console.error('Failed to generate object:', err);
+        results.push({ agentId: agent.id, status: 'error', rationale: 'JSON parse failed or AI failed to generate response' });
         continue;
       }
 
