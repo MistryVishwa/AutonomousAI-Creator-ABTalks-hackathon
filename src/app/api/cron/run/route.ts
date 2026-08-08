@@ -74,9 +74,9 @@ export async function GET(request: Request) {
         Recent live news discovered:
         ${topicsText}`;
 
-      // Use gemini-2.5-flash instead of deprecated 1.5 models
+      // Use gemini-3.5-flash as the newest available model for this user
       const { text } = await generateText({
-        model: google('gemini-2.5-flash'),
+        model: google('gemini-3.5-flash'),
         system: `You are an expert ${agent.domain} persona named ${agent.name}.
         Analyze the provided live news topics and apply strict editorial judgment.
         
