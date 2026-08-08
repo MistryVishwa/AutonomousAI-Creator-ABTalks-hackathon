@@ -81,9 +81,8 @@ export async function GET(request: Request) {
         - sources: Array of strings (URLs or sources of information used).
       `;
 
-      // Use gemini-pro for maximum region compatibility
       const { object } = await generateObject({
-        model: google('gemini-pro'),
+        model: google('gemini-1.5-flash'),
         schema: z.object({
           isWorthy: z.boolean(),
           text: z.string().optional(),
