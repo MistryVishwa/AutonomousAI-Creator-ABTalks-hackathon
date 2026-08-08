@@ -218,7 +218,8 @@ export async function GET(request: Request) {
       try {
         const query = encodeURIComponent(agent.domain);
         const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`);
-        liveTopics = feed.items.slice(0, 5).map(item => ({
+        // Reduce from 5 to 2 to significantly speed up AI reading time and prevent Vercel 10s timeout
+        liveTopics = feed.items.slice(0, 2).map(item => ({
           title: item.title || '',
           contentSnippet: item.contentSnippet || '',
           link: item.link || ''
@@ -238,7 +239,7 @@ export async function GET(request: Request) {
       const recentPosts = await prisma.post.findMany({
         where: { agentId: agent.id },
         orderBy: { createdAt: 'desc' },
-        take: 5,
+        take: 3, // Reduce memory from 5 to 3 to speed up reading time
         select: { text: true, sources: true }
       });
       
@@ -252,7 +253,7 @@ export async function GET(request: Request) {
         - Name: ${agent.name}
         - Domain of Expertise: ${agent.domain}
 
-        Your task is to review 5 recent live news topics discovered from the web and apply strict EDITORIAL JUDGMENT. 
+        Your task is to review 2 recent live news topics discovered from the web and apply strict EDITORIAL JUDGMENT. 
         You must decide if ANY of these topics are worth publishing about to your highly technical audience.
 
         *** EDITORIAL STANDARDS ***
