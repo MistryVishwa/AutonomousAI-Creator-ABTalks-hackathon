@@ -1,7 +1,18 @@
 import { PrismaClient } from '@prisma/client'
 
 const prismaClientSingleton = () => {
-  return new PrismaClient()
+  // Use Vercel's pooled connection URL if available to prevent connection exhaustion
+  const url = process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL;
+  if (url) {
+    return new PrismaClient({
+      datasources: {
+        db: {
+          url: url,
+        },
+      },
+    });
+  }
+  return new PrismaClient();
 }
 
 declare global {
