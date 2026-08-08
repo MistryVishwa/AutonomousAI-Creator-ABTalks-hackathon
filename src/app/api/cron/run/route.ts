@@ -15,27 +15,27 @@ export async function GET(request: Request) {
     const results = [];
     const parser = new Parser();
 
-    // 1. Topic Discovery (Live Information Source - 100% Free)
-    // Fetching live AI news from a public RSS feed (TechCrunch AI)
-    let liveTopics: { title: string, contentSnippet: string, link: string }[] = [];
-    try {
-      const feed = await parser.parseURL('https://techcrunch.com/category/artificial-intelligence/feed/');
-      liveTopics = feed.items.slice(0, 5).map(item => ({
-        title: item.title || '',
-        contentSnippet: item.contentSnippet || '',
-        link: item.link || ''
-      }));
-    } catch (e) {
-      console.error("RSS fetch failed", e);
-    }
-
-    if (liveTopics.length === 0) {
-       return NextResponse.json({ message: 'No topics discovered today' });
-    }
-
-    const topicsText = liveTopics.map(t => `Title: ${t.title}\nSummary: ${t.contentSnippet}\nLink: ${t.link}`).join('\n\n');
-
     for (const agent of agents) {
+      // 1. Topic Discovery (Live Information Source - 100% Free & Dynamic)
+      let liveTopics: { title: string, contentSnippet: string, link: string }[] = [];
+      try {
+        const query = encodeURIComponent(agent.domain);
+        const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`);
+        liveTopics = feed.items.slice(0, 5).map(item => ({
+          title: item.title || '',
+          contentSnippet: item.contentSnippet || '',
+          link: item.link || ''
+        }));
+      } catch (e) {
+        console.error(`RSS fetch failed for domain ${agent.domain}`, e);
+      }
+
+      if (liveTopics.length === 0) {
+        results.push({ agentId: agent.id, status: 'skipped (no news)' });
+        continue;
+      }
+
+      const topicsText = liveTopics.map(t => `Title: ${t.title}\nSummary: ${t.contentSnippet}\nLink: ${t.link}`).join('\n\n');
       // 2. Memory
       const recentPosts = await prisma.post.findMany({
         where: { agentId: agent.id },
