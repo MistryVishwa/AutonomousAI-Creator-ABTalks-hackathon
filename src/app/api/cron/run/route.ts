@@ -121,6 +121,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true, results });
   } catch (error: any) {
     console.error('Cron error:', error);
+    
+    // Diagnostic: If it's a model error, fetch the allowed models to see what their key actually supports!
+    if (error.message && error.message.includes('not found for API version v1beta')) {
+      try {
+        const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        const data = await res.json();
+        const availableModels = data.models ? data.models.map((m: any) => m.name).join(', ') : 'None found/API Disabled';
+        return NextResponse.json({ 
+          error: `API Key Error: ${error.message}. Your key only supports these models: ${availableModels}. Please ensure you used Google AI Studio, not Google Cloud Console.` 
+        }, { status: 500 });
+      } catch (diagError) {
+        // Fallback if diagnostic fails
+      }
+    }
+
     return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
   }
 }
