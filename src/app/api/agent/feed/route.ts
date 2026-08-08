@@ -30,7 +30,12 @@ export async function GET(request: Request) {
       sources: JSON.parse(post.sources),
     }));
 
-    return NextResponse.json({ posts: formattedPosts });
+    const rejectedTopics = await prisma.rejectedTopic.findMany({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json({ posts: formattedPosts, rejectedTopics });
   } catch (error) {
     console.error('Feed error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

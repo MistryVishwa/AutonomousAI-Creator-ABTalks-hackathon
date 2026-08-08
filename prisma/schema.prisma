@@ -16,6 +16,7 @@ model Agent {
   domain    String
   createdAt DateTime @default(now())
   posts     Post[]
+  rejected  RejectedTopic[]
 }
 
 model Post {
@@ -27,4 +28,15 @@ model Post {
   createdAt DateTime @default(now())
 
   agent     Agent    @relation(fields: [agentId], references: [id])
+}
+
+model RejectedTopic {
+  id          String   @id @default(uuid())
+  agentId     String
+  title       String
+  link        String
+  rationale   String
+  createdAt   DateTime @default(now())
+
+  agent       Agent    @relation(fields: [agentId], references: [id])
 }

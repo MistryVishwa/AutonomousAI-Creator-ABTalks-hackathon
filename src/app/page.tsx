@@ -10,6 +10,8 @@ export default function Home() {
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [posts, setPosts] = useState<any[]>([]);
+  const [rejectedTopics, setRejectedTopics] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'feed' | 'rejected'>('feed');
   const [loading, setLoading] = useState(false);
   const [triggering, setTriggering] = useState(false);
   const [triggerLog, setTriggerLog] = useState<{status: string, rationale?: string, error?: string} | null>(null);
@@ -52,6 +54,9 @@ export default function Home() {
       const data = await res.json();
       if (data.posts) {
         setPosts(data.posts);
+      }
+      if (data.rejectedTopics) {
+        setRejectedTopics(data.rejectedTopics);
       }
     } catch (err) {
       console.error(err);
@@ -253,12 +258,26 @@ export default function Home() {
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-8 flex flex-col gap-6"
           >
-            <div className="flex justify-between items-end mb-2 px-2">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Activity className="text-blue-600 dark:text-blue-400" />
-                Publishing Feed
-              </h2>
-              <span className="text-sm text-slate-600 dark:text-slate-400 font-medium bg-slate-200 dark:bg-slate-800 px-3 py-1 rounded-full">{posts.length} Posts generated</span>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-2 px-2 gap-4">
+              <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-800 w-full sm:w-auto">
+                <button 
+                  onClick={() => setActiveTab('feed')}
+                  className={`pb-2 text-xl font-bold flex items-center gap-2 transition-colors ${activeTab === 'feed' ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  <Activity className="w-5 h-5" />
+                  Publishing Feed
+                </button>
+                <button 
+                  onClick={() => setActiveTab('rejected')}
+                  className={`pb-2 text-xl font-bold flex items-center gap-2 transition-colors ${activeTab === 'rejected' ? 'text-red-500 dark:text-red-400 border-b-2 border-red-500 dark:border-red-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  <Shield className="w-5 h-5" />
+                  Rejected Topics
+                </button>
+              </div>
+              <div className="text-sm text-slate-600 dark:text-slate-400 font-medium bg-slate-200 dark:bg-slate-800 px-3 py-1 rounded-full whitespace-nowrap">
+                {activeTab === 'feed' ? `${posts.length} Posts generated` : `${rejectedTopics.length} Topics rejected`}
+              </div>
             </div>
 
             <AnimatePresence>
@@ -327,7 +346,7 @@ export default function Home() {
               )}
             </AnimatePresence>
 
-            {posts.length === 0 && !triggering ? (
+            {activeTab === 'feed' && posts.length === 0 && !triggering ? (
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -341,7 +360,7 @@ export default function Home() {
                   The agent is active. Click <strong>"Trigger Autonomous Run"</strong> to simulate the cron job discovering a topic, making an editorial decision, and publishing.
                 </p>
               </motion.div>
-            ) : (
+            ) : activeTab === 'feed' ? (
               <div className="space-y-6">
                 <AnimatePresence>
                   {posts.map((post, index) => (
@@ -410,7 +429,60 @@ export default function Home() {
                   ))}
                 </AnimatePresence>
               </div>
-            )}
+            ) : null}
+
+            {activeTab === 'rejected' && rejectedTopics.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="glass-panel p-16 rounded-3xl flex flex-col items-center justify-center text-center border-dashed border-2 border-slate-300 dark:border-slate-700/50 bg-white/30 dark:bg-transparent"
+              >
+                <div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6">
+                  <Shield className="w-12 h-12 text-slate-400 dark:text-slate-500" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3 text-slate-900 dark:text-white">No Rejected Topics</h3>
+                <p className="text-slate-600 dark:text-slate-400 max-w-md text-lg">
+                  The agent hasn't rejected any topics yet.
+                </p>
+              </motion.div>
+            ) : activeTab === 'rejected' ? (
+              <div className="space-y-6">
+                <AnimatePresence>
+                  {rejectedTopics.map((topic, index) => (
+                    <motion.article 
+                      key={topic.id} 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="glass-panel p-6 rounded-3xl relative group bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 shadow-sm"
+                    >
+                       <div className="absolute top-0 left-6 w-1 h-full bg-gradient-to-b from-red-400 to-transparent dark:from-red-500/50 -z-10 rounded-full"></div>
+                       <div className="flex items-start gap-4">
+                         <div className="w-8 h-8 mt-1 rounded-full bg-red-100 dark:bg-red-500/20 flex-shrink-0 flex items-center justify-center border border-red-200 dark:border-red-500/30">
+                           <XCircle className="w-4 h-4 text-red-500" />
+                         </div>
+                         <div className="w-full">
+                           <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">{topic.title}</h4>
+                           <a href={topic.link} target="_blank" rel="noreferrer" className="text-sm text-blue-500 hover:underline flex items-center gap-1 mb-4 inline-flex">
+                             Source Link <ExternalLink className="w-3 h-3" />
+                           </a>
+                           
+                           <div className="bg-red-50 dark:bg-red-900/10 rounded-xl p-4 border border-red-100 dark:border-red-900/30">
+                              <h5 className="text-xs font-bold text-red-600 dark:text-red-400 mb-2 uppercase tracking-wider flex items-center gap-2">
+                                <Shield className="w-3 h-3" />
+                                Rejection Rationale
+                              </h5>
+                              <p className="text-slate-700 dark:text-slate-300 text-sm">
+                                {topic.rationale}
+                              </p>
+                           </div>
+                         </div>
+                       </div>
+                    </motion.article>
+                  ))}
+                </AnimatePresence>
+              </div>
+            ) : null}
           </motion.div>
         </div>
       )}
