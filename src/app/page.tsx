@@ -97,11 +97,6 @@ export default function Home() {
         className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
       >
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 text-xs font-semibold bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 rounded-full border border-blue-500/20 dark:border-blue-500/30">
-              ABTalks Hackathon - Problem Statement 3
-            </span>
-          </div>
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-3 flex items-center gap-3 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
             <BrainCircuit className="text-blue-500 dark:text-blue-400 w-10 h-10" />
             Autonomous AI Creator

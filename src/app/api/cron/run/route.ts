@@ -278,8 +278,12 @@ export async function GET(request: Request) {
 
       let object;
       try {
-        const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        object = JSON.parse(cleanText);
+        // More robust JSON extraction to handle any markdown or extra text
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error("No JSON object found in response");
+        }
+        object = JSON.parse(jsonMatch[0]);
       } catch (parseError) {
         console.error('Failed to parse Gemini JSON output:', text);
         results.push({ agentId: agent.id, status: 'error', rationale: 'JSON parse failed' });
