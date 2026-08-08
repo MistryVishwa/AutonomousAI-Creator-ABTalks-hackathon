@@ -145,6 +145,9 @@
 
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+
+// Allow this serverless function to run for up to 60 seconds to prevent 504 Gateway Timeout on Vercel
+export const maxDuration = 60;
 import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';

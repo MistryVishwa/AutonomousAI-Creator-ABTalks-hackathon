@@ -68,7 +68,14 @@ export default function Home() {
     setTriggerLog(null);
     try {
       const res = await fetch("/api/cron/run");
-      const data = await res.json();
+      
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        throw new Error(`Server returned a non-JSON response (Status: ${res.status}). This usually means a Vercel Gateway Timeout (504) because the AI took more than 10-60 seconds to respond.`);
+      }
       
       if (!res.ok) {
         setTriggerLog({ status: 'error', error: data.error || 'Failed to trigger cron. Ensure your GOOGLE_GENERATIVE_AI_API_KEY is correct.' });
