@@ -1,25 +1,42 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateObject } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { google } from '@ai-sdk/google';
 import { z } from 'zod';
-
-// Configure to run every X minutes/hours via Vercel Cron
-// Set max duration if needed: export const maxDuration = 60;
+import Parser from 'rss-parser';
 
 export async function GET(request: Request) {
   try {
-    // 1. Fetch all active agents
     const agents = await prisma.agent.findMany();
     if (agents.length === 0) {
       return NextResponse.json({ message: 'No active agents found' });
     }
 
     const results = [];
+    const parser = new Parser();
 
-    // Process each agent
+    // 1. Topic Discovery (Live Information Source - 100% Free)
+    // Fetching live AI news from a public RSS feed (TechCrunch AI)
+    let liveTopics: { title: string, contentSnippet: string, link: string }[] = [];
+    try {
+      const feed = await parser.parseURL('https://techcrunch.com/category/artificial-intelligence/feed/');
+      liveTopics = feed.items.slice(0, 5).map(item => ({
+        title: item.title || '',
+        contentSnippet: item.contentSnippet || '',
+        link: item.link || ''
+      }));
+    } catch (e) {
+      console.error("RSS fetch failed", e);
+    }
+
+    if (liveTopics.length === 0) {
+       return NextResponse.json({ message: 'No topics discovered today' });
+    }
+
+    const topicsText = liveTopics.map(t => `Title: ${t.title}\nSummary: ${t.contentSnippet}\nLink: ${t.link}`).join('\n\n');
+
     for (const agent of agents) {
-      // 2. Memory: Fetch recent posts to avoid repetition
+      // 2. Memory
       const recentPosts = await prisma.post.findMany({
         where: { agentId: agent.id },
         orderBy: { createdAt: 'desc' },
@@ -31,26 +48,17 @@ export async function GET(request: Request) {
         ? recentPosts.map(p => `- ${p.text}`).join('\n')
         : "No previous posts.";
 
-      // 3. Topic Discovery (Mocked here, use Tavily/Exa in production)
-      // Since we don't have user's Tavily key, we will simulate the search for the hackathon
-      // A robust implementation would do: fetch(`https://api.tavily.com/search`, { ... })
-      const simulatedTopics = [
-        `New breakthrough in ${agent.domain} models showing 50% efficiency gain.`,
-        `Controversy over open-source vs closed-source ${agent.domain} tools.`,
-        `Major company announces integration of ${agent.domain} into their flagship product.`
-      ];
-
-      // 4. Editorial Judgment & Generation
+      // 3. Editorial Judgment & Generation (Free Gemini AI)
       const prompt = `
         You are an autonomous AI creator with the following persona:
         Name: ${agent.name}
         Domain: ${agent.domain}
 
-        Your task is to review recent news topics and decide if one is worth publishing about.
-        If none meet your standard, reject them. If one does, write a high-quality post about it.
+        Your task is to review recent live news topics and decide if one is worth publishing about.
+        If none meet your standard, reject them (isWorthy: false). If one does, write a high-quality post about it.
         
-        Recent news topics discovered:
-        ${simulatedTopics.join('\n')}
+        Recent live news discovered:
+        ${topicsText}
 
         Memory (Your recent posts, DO NOT repeat these topics):
         ${memoryContext}
@@ -62,8 +70,9 @@ export async function GET(request: Request) {
         - sources: Array of strings (URLs or sources of information used).
       `;
 
+      // Use gemini-1.5-flash for speed and free tier limits
       const { object } = await generateObject({
-        model: openai('gpt-4o-mini'),
+        model: google('gemini-1.5-flash'),
         schema: z.object({
           isWorthy: z.boolean(),
           text: z.string().optional(),
@@ -73,7 +82,7 @@ export async function GET(request: Request) {
         prompt,
       });
 
-      // 5. Autonomous Publishing
+      // 4. Autonomous Publishing
       if (object.isWorthy && object.text) {
         const post = await prisma.post.create({
           data: {
