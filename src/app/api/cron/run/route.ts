@@ -18,61 +18,84 @@ const groq = createOpenAI({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+// Google has been staging out model access unpredictably for newer API keys
 // mid-project (2.5-flash got locked out for "new users" after 1.5-flash was
 // fully deprecated). To keep the agent alive through the 48h judging window
 // without babysitting it, try a small ordered list of models and fall back
 // automatically instead of hard-failing on one restricted model.
 const MODEL_FALLBACK_CHAIN = [
-  { provider: 'groq', model: 'llama-3.3-70b-versatile' }, 
+  { provider: 'groq', model: 'llama-3.3-70b-versatile' }, // Groq is 10x faster and finishes within Vercel's 10s limit
   { provider: 'groq', model: 'llama-3.1-8b-instant' },
-  { provider: 'google', model: 'gemini-1.5-flash-latest' },
-  { provider: 'google', model: 'gemini-1.5-flash' },
-  { provider: 'google', model: 'gemini-1.0-pro' }
+  { provider: 'google', model: 'gemini-3.5-flash' },
+  { provider: 'google', model: 'gemini-2.0-flash' },
+  { provider: 'google', model: 'gemini-flash-latest' }
 ];
 
-async function generateTextWithFallback(args: { system: string; prompt: string }) {
-  let lastError: any;
+async function generateObjectWithFallback(args: { system: string; prompt: string; schema: any }) {
+  const attempts: { model: string; error: string }[] = [];
   for (const modelDef of MODEL_FALLBACK_CHAIN) {
     try {
       const model = modelDef.provider === 'google' ? google(modelDef.model) : groq(modelDef.model);
-      const result = await generateText({ ...args, model });
-      return { text: result.text, modelUsed: modelDef.model };
+      // Hard-cap each individual model attempt at 12s. With up to 5 models in
+      // the chain that's a worst case of ~60s total, but in practice the
+      // first (Groq) attempt succeeds almost every time and this just stops
+      // a single hung call from silently burning the whole request budget.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+      try {
+        const result = await generateObject({ ...args, model, abortSignal: controller.signal });
+        return { object: result.object, modelUsed: modelDef.model, attempts };
+      } finally {
+        clearTimeout(timeout);
+      }
     } catch (err: any) {
-      lastError = err;
-      const msg = (err?.message || '').toLowerCase();
-      const isModelAccessIssue =
-        msg.includes('not found') ||
-        msg.includes('no longer available') ||
-        msg.includes('is not supported') ||
-        msg.includes('fetch failed') ||
-        msg.includes('quota') ||
-        msg.includes('429') ||
-        msg.includes('unavailable');
-      if (!isModelAccessIssue && modelDef.provider === 'google') throw err; 
-      console.warn(`Model ${modelDef.model} unavailable or failed, trying next...`);
+      // Always keep trying the rest of the chain, no matter why this one
+      // failed - a bad Gemini call should never block the Groq fallbacks
+      // that come after it, and vice versa.
+      const errorMsg = err?.message || String(err);
+      attempts.push({ model: `${modelDef.provider}/${modelDef.model}`, error: errorMsg });
+      console.warn(`Model ${modelDef.provider}/${modelDef.model} failed: ${errorMsg}`);
     }
   }
-  throw lastError;
+  // Every model in the chain failed - throw an error that actually shows
+  // what happened with each one, instead of a generic message.
+  const summary = attempts.map(a => `[${a.model}] ${a.error}`).join(' | ');
+  throw new Error(`All models in fallback chain failed: ${summary}`);
 }
 
 export async function GET(request: Request) {
   try {
-    const agents = await prisma.agent.findMany();
-    if (agents.length === 0) {
+    // Fail fast and loud if keys are missing/misconfigured, rather than
+    // discovering it 5 failed model attempts later. The most common cause:
+    // an env var added in Vercel but only for Preview/Development, or added
+    // without triggering a redeploy (Vercel only picks up new env vars on
+    // the NEXT deployment, not automatically).
+    const missingKeys: string[] = [];
+    if (!process.env.GROQ_API_KEY) missingKeys.push('GROQ_API_KEY');
+    if (!process.env.GOOGLE_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) missingKeys.push('GOOGLE_API_KEY');
+    if (missingKeys.length > 0) {
+      console.warn(`Missing env vars at runtime: ${missingKeys.join(', ')}`);
+    }
+
+    const allAgents = await prisma.agent.findMany({ orderBy: { createdAt: 'desc' } });
+    if (allAgents.length === 0) {
       return NextResponse.json({ message: 'No active agents found' });
     }
 
-    const results = [];
+    // Only process the most recently created agents per tick. Old test/demo
+    // agents from local development shouldn't silently pile up and eat the
+    // 60s Vercel budget on every future cron run.
+    const agents = allAgents.slice(0, 3);
+
     const parser = new Parser();
 
-    for (const agent of agents) {
+    async function processAgent(agent: (typeof agents)[number]) {
       // 1. Topic Discovery (Live Information Source - 100% Free & Dynamic)
       let liveTopics: { title: string, contentSnippet: string, link: string }[] = [];
       try {
         const query = encodeURIComponent(agent.domain);
         const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`);
-        // Reduce from 5 to 2 to significantly speed up AI reading time and prevent Vercel 10s timeout
-        liveTopics = feed.items.slice(0, 2).map(item => ({
+        liveTopics = feed.items.slice(0, 5).map(item => ({
           title: item.title || '',
           contentSnippet: item.contentSnippet || '',
           link: item.link || ''
@@ -82,21 +105,20 @@ export async function GET(request: Request) {
       }
 
       if (liveTopics.length === 0) {
-        results.push({ agentId: agent.id, status: 'skipped (no news)' });
-        continue;
+        return { agentId: agent.id, status: 'skipped (no news)' };
       }
 
       const topicsText = liveTopics.map((t, i) => `[Topic ${i+1}]\nTitle: ${t.title}\nSummary: ${t.contentSnippet}\nLink: ${t.link}`).join('\n\n');
-      
+
       // 2. Memory
       const recentPosts = await prisma.post.findMany({
         where: { agentId: agent.id },
         orderBy: { createdAt: 'desc' },
-        take: 3, // Reduce memory from 5 to 3 to speed up reading time
+        take: 5,
         select: { text: true, sources: true }
       });
-      
-      const memoryContext = recentPosts.length > 0 
+
+      const memoryContext = recentPosts.length > 0
         ? recentPosts.map((p: { text: string }) => `- ${p.text.slice(0, 150)}...`).join('\n')
         : "No previous posts. This is your first post.";
 
@@ -106,7 +128,7 @@ export async function GET(request: Request) {
         - Name: ${agent.name}
         - Domain of Expertise: ${agent.domain}
 
-        Your task is to review 2 recent live news topics discovered from the web and apply strict EDITORIAL JUDGMENT. 
+        Your task is to review 5 recent live news topics discovered from the web and apply strict EDITORIAL JUDGMENT. 
         You must decide if ANY of these topics are worth publishing about to your highly technical audience.
 
         *** EDITORIAL STANDARDS ***
@@ -123,36 +145,23 @@ export async function GET(request: Request) {
 
       let object: any;
       let modelUsed = "unknown";
-      
-      try {
-        const result = await generateTextWithFallback({
-          system: `You are an expert ${agent.domain} persona named ${agent.name}. Analyze the provided live news topics and apply strict editorial judgment.
-          
-          You MUST respond with a raw JSON object and nothing else. Do not use markdown code blocks like \`\`\`json.
-          The JSON must match this structure exactly:
-          {
-            "isWorthy": boolean,
-            "text": "String representing your expert post (if worthy), or null",
-            "rationale": "String explaining why you accepted or rejected it",
-            "sources": ["Only include the EXACT link URL provided in the Recent live news section. Do NOT hallucinate or guess any other URLs."]
-          }`,
-          prompt
-        });
-        
-        modelUsed = result.modelUsed;
-        
-        // Extract JSON safely, even if wrapped in markdown
-        const rawText = result.text;
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error("No JSON object found in response");
-        }
-        object = JSON.parse(jsonMatch[0]);
 
+      try {
+        const result = await generateObjectWithFallback({
+          system: `You are an expert ${agent.domain} persona named ${agent.name}. Analyze the provided live news topics and apply strict editorial judgment.`,
+          prompt,
+          schema: z.object({
+            isWorthy: z.boolean(),
+            text: z.string().nullable().describe("String representing your expert post (if worthy), or null"),
+            rationale: z.string().describe("String explaining why you accepted or rejected it"),
+            sources: z.array(z.string()).describe("Only include the EXACT link URL provided in the Recent live news section. Do NOT hallucinate or guess any other URLs.")
+          })
+        });
+        object = result.object;
+        modelUsed = result.modelUsed;
       } catch (err: any) {
         console.error('Failed to generate object:', err);
-        results.push({ agentId: agent.id, status: 'error', rationale: 'JSON parse failed or AI failed to generate response' });
-        continue;
+        return { agentId: agent.id, status: 'error', rationale: err?.message || 'AI failed to generate response' };
       }
 
       // 4. Autonomous Publishing
@@ -188,7 +197,7 @@ export async function GET(request: Request) {
       r.status === 'fulfilled' ? r.value : { agentId: agents[i].id, status: 'error', rationale: String(r.reason) }
     );
 
-    return NextResponse.json({ success: true, results });
+    return NextResponse.json({ success: true, results, ...(missingKeys.length > 0 ? { warning: `Missing env vars: ${missingKeys.join(', ')}` } : {}) });
   } catch (error: any) {
     console.error('Cron error:', error);
     
