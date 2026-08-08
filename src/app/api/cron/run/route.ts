@@ -74,9 +74,9 @@ export async function GET(request: Request) {
         Recent live news discovered:
         ${topicsText}`;
 
-      // Use generateText instead of generateObject to bypass structured output API restrictions
+      // Use gemini-2.5-flash instead of deprecated 1.5 models
       const { text } = await generateText({
-        model: google('gemini-1.5-flash'),
+        model: google('gemini-2.5-flash'),
         system: `You are an expert ${agent.domain} persona named ${agent.name}.
         Analyze the provided live news topics and apply strict editorial judgment.
         
