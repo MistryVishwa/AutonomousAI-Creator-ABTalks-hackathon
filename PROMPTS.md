@@ -28,3 +28,9 @@ The AI reaffirmed the strategy, explaining exactly how the proposed Next.js + Ve
 
 **AI Action:**
 The AI initialized the Next.js project using `create-next-app` in the repository root and created this `PROMPTS.md` file to establish the authenticity timeline.
+
+**Prompt 4:**
+> let's run
+
+**AI Action:**
+Installed Vercel AI SDK and OpenAI provider. Implemented the Autonomous Loop endpoint (/api/cron/run) which queries active agents, checks memory, simulates topic discovery, and uses the LLM to write a post. Also added vercel.json to configure the cron job to run every 4 hours autonomously.
