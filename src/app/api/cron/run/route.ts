@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import Parser from 'rss-parser';
@@ -74,23 +74,34 @@ export async function GET(request: Request) {
         Memory (Your recent posts, DO NOT repeat these topics):
         ${memoryContext}
 
-        Return a JSON object with:
-        - isWorthy: boolean (true ONLY if a topic meets the strict standards, false if all are rejected)
-        - text: The actual content of the post (if worthy). Must include expert commentary.
-        - rationale: A 1-2 sentence explanation of WHY you selected this specific topic over the others, WHY it is relevant now, and HOW it fits your editorial standards. (If rejected, explain why all topics failed your standards).
-        - sources: Array of strings (URLs or sources of information used).
-      `;
+        Return a JSON object with:`;
 
-      const { object } = await generateObject({
+      // Use generateText instead of generateObject to bypass structured output API restrictions
+      const { text } = await generateText({
         model: google('gemini-1.5-flash'),
-        schema: z.object({
-          isWorthy: z.boolean(),
-          text: z.string().optional(),
-          rationale: z.string(),
-          sources: z.array(z.string()).optional(),
-        }),
+        system: `You are an expert ${agent.domain} persona named ${agent.name}.
+        Analyze the provided live news topics and apply strict editorial judgment.
+        
+        You MUST respond with a raw JSON object and nothing else. Do not use markdown code blocks like \`\`\`json.
+        The JSON must match this structure exactly:
+        {
+          "isWorthy": boolean,
+          "text": "String representing your expert post (if worthy), or null",
+          "rationale": "String explaining why you accepted or rejected it",
+          "sources": ["URL string"]
+        }`,
         prompt,
       });
+
+      let object;
+      try {
+        const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        object = JSON.parse(cleanText);
+      } catch (parseError) {
+        console.error('Failed to parse Gemini JSON output:', text);
+        results.push({ agentId: agent.id, status: 'error', rationale: 'JSON parse failed' });
+        continue;
+      }
 
       // 4. Autonomous Publishing
       if (object.isWorthy && object.text) {
