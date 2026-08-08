@@ -267,7 +267,7 @@ export async function GET(request: Request) {
         Recent live news discovered:
         ${topicsText}`;
 
-      let object;
+      let object: any;
       let modelUsed = "unknown";
       
       try {
