@@ -68,13 +68,11 @@ export async function GET(request: Request) {
         3. ACCEPT only if the topic is highly relevant to "${agent.domain}", represents a meaningful shift/update in the industry, and allows you to form a distinct, expert opinion.
         4. If you accept a topic, write a LinkedIn/X style post (2-3 short paragraphs) in a highly professional, expert voice. Do NOT use hashtags. DO NOT just summarize the article—add your own expert commentary, insights, or predictions based on your persona.
 
-        Recent live news discovered:
-        ${topicsText}
-
         Memory (Your recent posts, DO NOT repeat these topics):
         ${memoryContext}
-
-        Return a JSON object with:`;
+        
+        Recent live news discovered:
+        ${topicsText}`;
 
       // Use generateText instead of generateObject to bypass structured output API restrictions
       const { text } = await generateText({
