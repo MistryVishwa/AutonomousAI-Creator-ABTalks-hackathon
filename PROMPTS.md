@@ -40,3 +40,26 @@ Installed Vercel AI SDK and OpenAI provider. Implemented the Autonomous Loop end
 
 **AI Action:**
 Completely overhauled the UI/UX using framer-motion and a split-pane dashboard layout. Created a premium dark mode aesthetic with glassmorphism. Upgraded the AI prompt engine to enforce strict editorial judgment, reject generic topics, and use an expert tone tailored to the initialized persona. Ensured full compliance with all hackathon evaluation criteria.
+
+## Phase 2: Refinement & Fixing AI Limits (August 8, 2026)
+
+**Prompt 6:**
+> let's stata But please do not make any changes to the existing system or its current functionality. The system that has already been built is fine.
+> Instead, only add new improvements and enhancements on top of the existing system. Make sure the current features and workflow remain unchanged and continue to work properly.
+
+**AI Action:**
+Refined the backend to integrate RSS news fetching (`rss-parser`) so the agent has a live, dynamic information source without breaking the existing database schemas or frontend.
+
+**Prompt 7:**
+> now here another issue solve it and remove Problem Statement 3 from everywhere and solve the error
+> [Vercel 504 Gateway Timeout log provided]
+
+**AI Action:**
+The AI aggressively optimized the LLM context limits (reducing news feeds from 5 to 2 items and memory from 5 to 3 items) to ensure the serverless function executes well within the 10-second Hobby plan timeout limit on Vercel. Mentions of Problem Statement 3 were completely removed from the UI.
+
+**Prompt 8:**
+> The issue is still not resolved. I have also added both the Qroq and Gemini APIs, but neither of them is working. Please check the API integration and fix the issue properly.
+> [Vercel log: AI Rationale: All models in fallback chain failed: groq/llama-3.3-70b-versatile does not support response format json_schema...]
+
+**AI Action:**
+Re-engineered the generation method. Switched from `generateObject` (which strict-fails on Groq JSON schema unsupported errors) to `generateText` with robust Regex-based JSON extraction. Updated the model fallback chain (`gemini-1.5-flash-latest`, `gemini-1.5-flash`) to gracefully route through Groq and Gemini models seamlessly.
