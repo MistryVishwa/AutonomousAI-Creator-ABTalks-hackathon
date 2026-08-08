@@ -188,7 +188,8 @@ async function generateWithFallback(args: { system: string; prompt: string }) {
         msg.includes('is not supported for generatecontent') ||
         msg.includes('fetch failed') ||
         msg.includes('quota') ||
-        msg.includes('429');
+        msg.includes('429') ||
+        msg.includes('unavailable');
       if (!isModelAccessIssue && modelDef.provider === 'google') throw err; 
       console.warn(`Model ${modelDef.model} unavailable, trying next in fallback chain...`);
     }
