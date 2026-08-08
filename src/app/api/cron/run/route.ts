@@ -169,10 +169,11 @@ const groq = createOpenAI({
 // without babysitting it, try a small ordered list of models and fall back
 // automatically instead of hard-failing on one restricted model.
 const MODEL_FALLBACK_CHAIN = [
+  { provider: 'groq', model: 'llama-3.3-70b-versatile' }, // Groq is 10x faster and finishes within Vercel's 10s limit
+  { provider: 'groq', model: 'llama-3.1-8b-instant' },
   { provider: 'google', model: 'gemini-3.5-flash' },
   { provider: 'google', model: 'gemini-2.0-flash' },
-  { provider: 'google', model: 'gemini-flash-latest' },
-  { provider: 'groq', model: 'llama-3.3-70b-versatile' }
+  { provider: 'google', model: 'gemini-flash-latest' }
 ];
 
 async function generateWithFallback(args: { system: string; prompt: string }) {
