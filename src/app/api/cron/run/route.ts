@@ -181,12 +181,14 @@ async function generateWithFallback(args: { system: string; prompt: string }) {
       return { ...result, modelUsed: modelDef.model };
     } catch (err: any) {
       lastError = err;
-      const msg = err?.message || '';
+      const msg = (err?.message || '').toLowerCase();
       const isModelAccessIssue =
-        msg.includes('not found for API version') ||
+        msg.includes('not found for api version') ||
         msg.includes('no longer available') ||
-        msg.includes('is not supported for generateContent') ||
-        msg.includes('fetch failed');
+        msg.includes('is not supported for generatecontent') ||
+        msg.includes('fetch failed') ||
+        msg.includes('quota') ||
+        msg.includes('429');
       if (!isModelAccessIssue && modelDef.provider === 'google') throw err; 
       console.warn(`Model ${modelDef.model} unavailable, trying next in fallback chain...`);
     }
